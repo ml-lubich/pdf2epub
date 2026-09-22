@@ -2,20 +2,19 @@
 # instead (see README) or run natively.
 FROM python:3.13-slim
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ src/
 
-COPY main.py .
-COPY modules/ modules/
+RUN uv sync --no-dev
 
-# marker-pdf downloads its models on first run; mount a volume at this path
-# to cache them across container runs.
+ENV PATH="/app/.venv/bin:$PATH"
 ENV HF_HOME=/models
 VOLUME /models
 
-# PDFs are read from /data/input and results written next to them by default.
 WORKDIR /data
 
-ENTRYPOINT ["python", "/app/main.py"]
+ENTRYPOINT ["pdf2epub"]

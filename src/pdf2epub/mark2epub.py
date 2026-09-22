@@ -1,86 +1,158 @@
-import markdown
-import os
-from xml.dom import minidom
-import zipfile
-import sys
+from __future__ import annotations
+
 import json
-from PIL import Image
-import regex as re
-from pathlib import Path
-from datetime import datetime, timezone
+import os
 import subprocess
-from typing import Dict, Optional
+import sys
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
 from urllib.parse import quote
+from xml.dom import minidom
 from xml.sax.saxutils import escape as xml_escape
+
 import latex2mathml.converter
+import markdown
+import regex as re
+from PIL import Image
+
+
+@dataclass(frozen=True)
+class EpubMetadata:
+    """Optional EPUB Dublin Core overrides for non-interactive runs."""
+
+    title: str | None = None
+    author: str | None = None
+    language: str | None = None
+    publisher: str | None = None
+    identifier: str | None = None
+    rights: str | None = None
+    date: str | None = None
+
 
 def get_user_input(prompt: str, default: str = "") -> str:
     """Get user input with a default value."""
     user_input = input(f"{prompt} [{default}]: ").strip()
     return user_input if user_input else default
 
-def get_metadata_from_user(existing_metadata: Optional[Dict] = None) -> Dict:
-    """Interactively collect metadata from user with defaults from existing metadata."""
-    if existing_metadata is None:
-        existing_metadata = {}
-    
+
+def _default_metadata_fields(existing_metadata: dict[str, Any]) -> dict[str, tuple[str, str]]:
     metadata = existing_metadata.get("metadata", {})
-    
-    print("\nPlease provide the following metadata for your EPUB (press Enter to use default value):")
-    
-    fields = {
+    return {
         "dc:title": ("Title", metadata.get("dc:title", "Untitled Document")),
         "dc:creator": ("Author(s)", metadata.get("dc:creator", "Unknown Author")),
-        "dc:identifier": ("Unique Identifier", metadata.get("dc:identifier", f"id-{datetime.now().strftime('%Y%m%d%H%M%S')}")),
+        "dc:identifier": (
+            "Unique Identifier",
+            metadata.get("dc:identifier", f"id-{datetime.now().strftime('%Y%m%d%H%M%S')}"),
+        ),
         "dc:language": ("Language (e.g., en, de, fr)", metadata.get("dc:language", "en")),
         "dc:rights": ("Rights", metadata.get("dc:rights", "All rights reserved")),
         "dc:publisher": ("Publisher", metadata.get("dc:publisher", "PDF2EPUB")),
-        "dc:date": ("Publication Date (YYYY-MM-DD)", metadata.get("dc:date", datetime.now().strftime("%Y-%m-%d")))
+        "dc:date": (
+            "Publication Date (YYYY-MM-DD)",
+            metadata.get("dc:date", datetime.now().strftime("%Y-%m-%d")),
+        ),
     }
-    
-    updated_metadata = {}
-    for key, (prompt, default) in fields.items():
-        value = get_user_input(prompt, default)
-        updated_metadata[key] = value
-        
+
+
+def _apply_overrides(
+    updated_metadata: dict[str, str],
+    overrides: EpubMetadata | None,
+) -> dict[str, str]:
+    if overrides is None:
+        return updated_metadata
+    mapping = {
+        "dc:title": overrides.title,
+        "dc:creator": overrides.author,
+        "dc:language": overrides.language,
+        "dc:publisher": overrides.publisher,
+        "dc:identifier": overrides.identifier,
+        "dc:rights": overrides.rights,
+        "dc:date": overrides.date,
+    }
+    for key, value in mapping.items():
+        if value:
+            updated_metadata[key] = value
+    return updated_metadata
+
+
+def build_epub_description(
+    existing_metadata: dict[str, Any] | None = None,
+    *,
+    interactive: bool = True,
+    overrides: EpubMetadata | None = None,
+) -> dict[str, Any]:
+    """Build description.json payload, optionally prompting for metadata."""
+    if existing_metadata is None:
+        existing_metadata = {}
+
+    fields = _default_metadata_fields(existing_metadata)
+    updated_metadata: dict[str, str] = {}
+
+    if interactive:
+        print(
+            "\nPlease provide the following metadata for your EPUB "
+            "(press Enter to use default value):"
+        )
+        for key, (prompt, default) in fields.items():
+            updated_metadata[key] = get_user_input(prompt, default)
+    else:
+        for key, (_prompt, default) in fields.items():
+            updated_metadata[key] = default
+
+    updated_metadata = _apply_overrides(updated_metadata, overrides)
+
     return {
         "metadata": updated_metadata,
         "default_css": existing_metadata.get("default_css", ["style.css"]),
         "chapters": existing_metadata.get("chapters", []),
-        "cover_image": existing_metadata.get("cover_image", None)
+        "cover_image": existing_metadata.get("cover_image", None),
     }
 
-def review_markdown(markdown_path: Path) -> tuple[bool, str]:
-    """Ask user if they want to review the markdown file."""
-    content = markdown_path.read_text(encoding='utf-8')
-    
+
+def get_metadata_from_user(existing_metadata: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """Interactively collect metadata from user with defaults from existing metadata."""
+    return build_epub_description(existing_metadata, interactive=True)
+
+
+def review_markdown(markdown_path: Path, *, enabled: bool = True) -> tuple[bool, str]:
+    """Optionally ask user if they want to review the markdown file."""
+    content = markdown_path.read_text(encoding="utf-8")
+    if not enabled:
+        return True, content
+
     while True:
-        response = input("\nWould you like to review the markdown file before conversion? (y/n): ").lower()
-        if response in ['y', 'yes']:
+        response = input(
+            "\nWould you like to review the markdown file before conversion? (y/n): "
+        ).lower()
+        if response in ["y", "yes"]:
             try:
-                if sys.platform == 'darwin':
-                    subprocess.run(['open', str(markdown_path)], check=True)
-                elif os.name == 'posix':
-                    subprocess.run(['xdg-open', str(markdown_path)], check=True)
+                if sys.platform == "darwin":
+                    subprocess.run(["open", str(markdown_path)], check=True)
+                elif os.name == "posix":
+                    subprocess.run(["xdg-open", str(markdown_path)], check=True)
                 else:
                     os.startfile(str(markdown_path))
-                
+
                 while True:
-                    proceed = input("\nPress Enter when you're done editing (or 'q' to abort): ").lower()
-                    if proceed == 'q':
+                    proceed = input(
+                        "\nPress Enter when you're done editing (or 'q' to abort): "
+                    ).lower()
+                    if proceed == "q":
                         return False, content
-                    elif proceed == '':
-                        updated_content = markdown_path.read_text(encoding='utf-8')
+                    if proceed == "":
+                        updated_content = markdown_path.read_text(encoding="utf-8")
                         return True, updated_content
             except Exception as e:
                 print(f"\nError opening markdown file: {e}")
                 print("Proceeding with conversion...")
                 return True, content
-        elif response in ['n', 'no']:
+        elif response in ["n", "no"]:
             return True, content
         else:
             print("Please enter 'y' or 'n'")
-
 def build_image_lookup(images_dir: Path) -> dict:
     """Build a {lowercase_name: actual_path} map for O(1) case-insensitive lookups."""
     lookup = {}
@@ -482,61 +554,75 @@ def get_chapter_XML(work_dir: str, md_filename: str, css_filenames: list[str], c
 
 
 
-def convert_to_epub(markdown_dir: Path, output_path: Path) -> None:
-    """
-    Convert markdown files and images to EPUB format.
-    """
+def convert_to_epub(
+    markdown_dir: Path,
+    output_path: Path,
+    *,
+    interactive: bool = True,
+    review_markdown_files: bool = True,
+    metadata_overrides: EpubMetadata | None = None,
+) -> None:
+    """Convert markdown files and images to EPUB format."""
     if not markdown_dir.exists():
         raise FileNotFoundError(f"Markdown directory not found: {markdown_dir}")
-        
-    if not list(markdown_dir.glob('*.md')):
-        raise ValueError(f"No markdown files found in: {markdown_dir}")
-    
-    # Generate EPUB file
-    epub_path = markdown_dir / f"{markdown_dir.name}.epub"
-    main([str(markdown_dir), str(epub_path)])
 
-def main(args):
+    if not list(markdown_dir.glob("*.md")):
+        raise ValueError(f"No markdown files found in: {markdown_dir}")
+
+    epub_path = markdown_dir / f"{markdown_dir.name}.epub"
+    main(
+        [str(markdown_dir), str(epub_path)],
+        interactive=interactive,
+        review_markdown_files=review_markdown_files,
+        metadata_overrides=metadata_overrides,
+    )
+
+
+def main(
+    args: list[str],
+    *,
+    interactive: bool = True,
+    review_markdown_files: bool = True,
+    metadata_overrides: EpubMetadata | None = None,
+) -> None:
     if len(args) < 2:
-        print("\nUsage:\n    python md2epub.py <markdown_directory> <output_file.epub>")
-        exit(1)
+        print("\nUsage:\n    python -m pdf2epub.mark2epub <markdown_directory> <output_file.epub>")
+        raise SystemExit(1)
 
     work_dir = args[0]
     output_path = args[1]
 
-    images_dir = os.path.join(work_dir, 'images/')
-    css_dir = os.path.join(work_dir, 'css/')
+    images_dir = os.path.join(work_dir, "images/")
+    css_dir = os.path.join(work_dir, "css/")
 
     try:
-        # Reading/Creating the JSON file containing the description of the eBook
         description_path = os.path.join(work_dir, "description.json")
-        existing_metadata = {}
-        
+        existing_metadata: dict[str, Any] = {}
+
         if os.path.exists(description_path):
-            with open(description_path, 'r', encoding='utf-8') as f:
+            with open(description_path, "r", encoding="utf-8") as f:
                 existing_metadata = json.load(f)
-        
-        # Get metadata from user
-        json_data = get_metadata_from_user(existing_metadata)
-        
-        # Find all markdown files if not already in metadata
+
+        json_data = build_epub_description(
+            existing_metadata,
+            interactive=interactive,
+            overrides=metadata_overrides,
+        )
+
         if not json_data["chapters"]:
-            markdown_files = [f for f in os.listdir(work_dir) if f.endswith('.md')]
+            markdown_files = [f for f in os.listdir(work_dir) if f.endswith(".md")]
             for md_file in sorted(markdown_files):
-                json_data["chapters"].append({
-                    "markdown": md_file,
-                    "css": ""
-                })
-        
-        # Save the updated description.json
-        with open(description_path, 'w', encoding='utf-8') as f:
+                json_data["chapters"].append({"markdown": md_file, "css": ""})
+
+        with open(description_path, "w", encoding="utf-8") as f:
             json.dump(json_data, f, indent=2)
-        
-        # Review markdown files and store updated content
-        chapter_contents = {}
+
+        chapter_contents: dict[str, str] = {}
         for chapter in json_data["chapters"]:
             md_path = Path(work_dir) / chapter["markdown"]
-            should_continue, content = review_markdown(md_path)
+            should_continue, content = review_markdown(
+                md_path, enabled=review_markdown_files
+            )
             if not should_continue:
                 print("\nConversion aborted by user.")
                 return

@@ -1,8 +1,12 @@
-from pathlib import Path
-import sys
-import json
-from PIL import Image
+from __future__ import annotations
+
 import io
+import json
+import sys
+from pathlib import Path
+
+from PIL import Image
+
 
 def get_default_output_dir(input_path: Path) -> Path:
     """
@@ -77,8 +81,8 @@ def save_images(images: dict, image_dir: Path) -> None:
 def convert_pdf(
     input_path: str,
     output_dir: Path,
-    max_pages: int = None,
-    start_page: int = None,
+    max_pages: int | None = None,
+    start_page: int | None = None,
 ) -> None:
     """
     Convert a single PDF file to markdown format with enhanced image handling.

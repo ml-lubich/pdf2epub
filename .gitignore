@@ -131,6 +131,26 @@ ENV/
 env.bak/
 venv.bak/
 
+# Project
+filetree.md
+text_files/
+input/
+output/
+figures/
+.omc/
+tmp/
+
+.litellm_cache/
+.litellm_cache/*
+
+# Config with sensitive data
+config.yaml
+
+# macOS
+.DS_Store
+.claude/
+.cursor/
+
 # Spyder project settings
 .spyderproject
 .spyproject
