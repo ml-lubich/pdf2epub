@@ -562,14 +562,24 @@ def convert_to_epub(
     review_markdown_files: bool = True,
     metadata_overrides: EpubMetadata | None = None,
 ) -> None:
-    """Convert markdown files and images to EPUB format."""
+    """Convert markdown files and images to EPUB format.
+
+    ``output_path`` may be a directory (EPUB written as
+    ``<dir>/<markdown_dir.name>.epub``) or a ``.epub`` file path.
+    """
     if not markdown_dir.exists():
         raise FileNotFoundError(f"Markdown directory not found: {markdown_dir}")
 
     if not list(markdown_dir.glob("*.md")):
         raise ValueError(f"No markdown files found in: {markdown_dir}")
 
-    epub_path = markdown_dir / f"{markdown_dir.name}.epub"
+    if output_path.suffix.lower() == ".epub":
+        epub_path = output_path
+        epub_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        output_path.mkdir(parents=True, exist_ok=True)
+        epub_path = output_path / f"{markdown_dir.name}.epub"
+
     main(
         [str(markdown_dir), str(epub_path)],
         interactive=interactive,

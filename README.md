@@ -7,7 +7,7 @@ packaged for **uv** / `pyproject.toml` under `ml-lubich`.
 
 ## Install
 
-Requires Python 3.10–3.14 (**3.13 recommended**).
+Requires Python 3.11–3.14 (**3.13 recommended**).
 
 ```bash
 # clone + sync

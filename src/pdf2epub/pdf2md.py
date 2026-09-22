@@ -47,7 +47,10 @@ def save_images(images: dict, image_dir: Path) -> None:
             if not image_data:
                 continue
                 
-            image_path = image_dir / filename
+            image_path = image_dir / Path(filename).name
+            if image_path.resolve().parent != image_dir.resolve():
+                print(f"Skipping unsafe image path: {filename}")
+                continue
             
             # Handle different image data formats
             if isinstance(image_data, Image.Image):

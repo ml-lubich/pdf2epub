@@ -137,7 +137,7 @@ def main(argv: list[str] | None = None) -> None:
                 print("Converting Markdown to EPUB...")
                 mark2epub.convert_to_epub(
                     markdown_dir,
-                    output_path,
+                    markdown_dir / f"{markdown_dir.name}.epub",
                     interactive=interactive,
                     review_markdown_files=review,
                     metadata_overrides=metadata_overrides,
